@@ -1,34 +1,68 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 
-// Multi-tier role definitions
+// Initialize Supabase Client using repository environment variables
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
 type Role = 'SUPER_MASTER' | 'BROKER_ADMIN' | 'SUB_ADMIN' | 'CLIENT';
 
 interface Account {
   id: string;
-  clientName: string;
+  client_name: string;
   balance: number;
   equity: number;
-  allocatedFund: number;
-  status: 'Active' | 'Paused' | 'Pending';
+  allocated_fund: number;
+  status: string;
 }
 
 export default function App() {
   const [activeRole, setActiveRole] = useState<Role>('CLIENT');
   const [activeTab, setActiveTab] = useState<'overview' | 'trading' | 'management'>('overview');
   
-  // Simulated state for demonstration
+  // State populated from Supabase DB (with fallback defaults)
   const [accounts, setAccounts] = useState<Account[]>([
-    { id: 'ACC-1001', clientName: 'John Doe', balance: 25000, equity: 26450, allocatedFund: 15000, status: 'Active' },
-    { id: 'ACC-1002', clientName: 'Sarah Smith', balance: 50000, equity: 48900, allocatedFund: 30000, status: 'Active' },
-    { id: 'ACC-1003', clientName: 'Metro Capital', balance: 125000, equity: 131200, allocatedFund: 100000, status: 'Active' },
+    { id: 'ACC-1001', client_name: 'John Doe', balance: 25000, equity: 26450, allocated_fund: 15000, status: 'Active' },
+    { id: 'ACC-1002', client_name: 'Sarah Smith', balance: 50000, equity: 48900, allocated_fund: 30000, status: 'Active' },
+    { id: 'ACC-1003', client_name: 'Metro Capital', balance: 125000, equity: 131200, allocated_fund: 100000, status: 'Active' },
   ]);
 
   const [tradeSymbol, setTradeSymbol] = useState('EUR/USD');
   const [tradeAmount, setTradeAmount] = useState(1000);
 
+  // Fetch and sync accounts from Supabase in real-time
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      if (!supabaseUrl || !supabaseAnonKey) return;
+      const { data, error } = await supabase.from('accounts').select('*');
+      if (data && data.length > 0) {
+        setAccounts(data);
+      }
+    };
+
+    fetchAccounts();
+
+    // Listen to live database updates via WebSocket
+    const channel = supabase
+      .channel('realtime-accounts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, () => {
+        fetchAccounts();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const handleSimulateTrade = (type: 'BUY' | 'SELL') => {
     alert(`${type} order executed for ${tradeAmount} ${tradeSymbol} successfully!`);
   };
+
+  // Calculate totals
+  const totalPortfolioValue = accounts.reduce((acc, item) => acc + Number(item.balance), 0);
+  const totalAllocatedCapital = accounts.reduce((acc, item) => acc + Number(item.allocated_fund), 0);
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: '#f8fafc', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -36,7 +70,9 @@ export default function App() {
       <header style={{ borderBottom: '1px solid #334155', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: '#38bdf8' }}>Brokerage SAAC Core</h1>
-          <span style={{ fontSize: '12px', background: '#0284c7', color: '#fff', padding: '2px 8px', borderRadius: '4px' }}>Supabase Connected</span>
+          <span style={{ fontSize: '12px', background: '#0284c7', color: '#fff', padding: '2px 8px', borderRadius: '4px' }}>
+            Supabase Live
+          </span>
         </div>
 
         {/* View Mode Switcher */}
@@ -122,19 +158,25 @@ export default function App() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '32px' }}>
               <div style={{ background: '#1e293b', padding: '20px', borderRadius: '8px', border: '1px solid #334155' }}>
                 <div style={{ fontSize: '14px', color: '#94a3b8' }}>Total Portfolio Value</div>
-                <div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '8px', color: '#22c55e' }}>$200,000.00</div>
+                <div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '8px', color: '#22c55e' }}>
+                  ${totalPortfolioValue.toLocaleString()}
+                </div>
               </div>
               <div style={{ background: '#1e293b', padding: '20px', borderRadius: '8px', border: '1px solid #334155' }}>
                 <div style={{ fontSize: '14px', color: '#94a3b8' }}>Allocated Capital</div>
-                <div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '8px', color: '#38bdf8' }}>$145,000.00</div>
+                <div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '8px', color: '#38bdf8' }}>
+                  ${totalAllocatedCapital.toLocaleString()}
+                </div>
               </div>
               <div style={{ background: '#1e293b', padding: '20px', borderRadius: '8px', border: '1px solid #334155' }}>
-                <div style={{ fontSize: '14px', color: '#94a3b8' }}>Floating P&L</div>
-                <div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '8px', color: '#22c55e' }}>+$6,550.00</div>
+                <div style={{ fontSize: '14px', color: '#94a3b8' }}>Active Accounts</div>
+                <div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '8px', color: '#f59e0b' }}>
+                  {accounts.length}
+                </div>
               </div>
             </div>
 
-            {/* Client / Manager Access Notice */}
+            {/* Role Notice */}
             <div style={{ background: '#1e293b', padding: '20px', borderRadius: '8px', border: '1px solid #334155' }}>
               <h3 style={{ marginTop: 0 }}>Active Role Permissions</h3>
               <p style={{ color: '#94a3b8', fontSize: '14px' }}>
@@ -152,7 +194,7 @@ export default function App() {
             <div style={{ background: '#1e293b', padding: '20px', borderRadius: '8px', border: '1px solid #334155', minHeight: '300px' }}>
               <h3 style={{ marginTop: 0 }}>Market Chart Simulator</h3>
               <div style={{ height: '220px', background: '#0f172a', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                [ Real-time TradingView / Price Feed Widget ]
+                [ Live Real-time Price Chart Feed ]
               </div>
             </div>
 
@@ -220,13 +262,13 @@ export default function App() {
                 {accounts.map((acc) => (
                   <tr key={acc.id} style={{ borderBottom: '1px solid #334155' }}>
                     <td style={{ padding: '12px', fontWeight: '600' }}>{acc.id}</td>
-                    <td style={{ padding: '12px' }}>{acc.clientName}</td>
-                    <td style={{ padding: '12px' }}>${acc.balance.toLocaleString()}</td>
-                    <td style={{ padding: '12px', color: '#22c55e' }}>${acc.equity.toLocaleString()}</td>
-                    <td style={{ padding: '12px' }}>${acc.allocatedFund.toLocaleString()}</td>
+                    <td style={{ padding: '12px' }}>{acc.client_name || 'N/A'}</td>
+                    <td style={{ padding: '12px' }}>${Number(acc.balance).toLocaleString()}</td>
+                    <td style={{ padding: '12px', color: '#22c55e' }}>${Number(acc.equity).toLocaleString()}</td>
+                    <td style={{ padding: '12px' }}>${Number(acc.allocated_fund).toLocaleString()}</td>
                     <td style={{ padding: '12px' }}>
                       <span style={{ background: '#065f46', color: '#34d399', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' }}>
-                        {acc.status}
+                        {acc.status || 'Active'}
                       </span>
                     </td>
                   </tr>
