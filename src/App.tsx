@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase Client using repository environment variables
+// Initialize Supabase Client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -21,7 +21,7 @@ export default function App() {
   const [activeRole, setActiveRole] = useState<Role>('CLIENT');
   const [activeTab, setActiveTab] = useState<'overview' | 'trading' | 'management'>('overview');
   
-  // State populated from Supabase DB (with fallback defaults)
+  // State populated from Supabase DB
   const [accounts, setAccounts] = useState<Account[]>([
     { id: 'ACC-1001', client_name: 'John Doe', balance: 25000, equity: 26450, allocated_fund: 15000, status: 'Active' },
     { id: 'ACC-1002', client_name: 'Sarah Smith', balance: 50000, equity: 48900, allocated_fund: 30000, status: 'Active' },
@@ -35,7 +35,7 @@ export default function App() {
   useEffect(() => {
     const fetchAccounts = async () => {
       if (!supabaseUrl || !supabaseAnonKey) return;
-      const { data, error } = await supabase.from('accounts').select('*');
+      const { data } = await supabase.from('accounts').select('*');
       if (data && data.length > 0) {
         setAccounts(data);
       }
@@ -56,8 +56,28 @@ export default function App() {
     };
   }, []);
 
-  const handleSimulateTrade = (type: 'BUY' | 'SELL') => {
-    alert(`${type} order executed for ${tradeAmount} ${tradeSymbol} successfully!`);
+  // Handle Trade Execution & Save to Supabase 'trades' table
+  const handleSimulateTrade = async (type: 'BUY' | 'SELL') => {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      alert(`${type} order executed locally for ${tradeAmount} ${tradeSymbol}!`);
+      return;
+    }
+
+    const { error } = await supabase.from('trades').insert([
+      {
+        account_id: 'ACC-1001', // Target client account
+        symbol: tradeSymbol,
+        type: type,
+        amount: tradeAmount,
+        status: 'Executed',
+      },
+    ]);
+
+    if (error) {
+      alert(`Trade error: ${error.message}`);
+    } else {
+      alert(`${type} order of $${tradeAmount} for ${tradeSymbol} saved to Supabase!`);
+    }
   };
 
   // Calculate totals
